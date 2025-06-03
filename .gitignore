@@ -1,0 +1,23 @@
+# Ignore outputs and checkpoints
+outputs/
+logs/
+checkpoints/
+output/
+
+# PyTorch/TF model files
+*.pt
+*.bin
+*.ckpt
+*.h5
+*.npy
+
+# Cache
+__pycache__/
+*.pyc
+
+# VSCode and system
+.vscode/
+.DS_Store
+
+# Data
+data/
