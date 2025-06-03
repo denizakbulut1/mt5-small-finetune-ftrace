@@ -11,11 +11,13 @@ This repository contains code and scripts for fine-tuning the [mT5-small](https:
 
 ## Folder Structure
 
+```
 mt5-small-finetune-ftrace/
-├── callbacks/ # Custom training callback
-├── scripts/ # Training, evaluation, and dataset prep scripts
-├── fine_tune_mt5.sh # SLURM script for training on a cluster
-├── mt5-small.yml # Conda environment file
-├── README.md # This file
-└── .gitignore # Files/folders excluded from GitHub
+├── callbacks/              # Custom training callback
+├── scripts/                # Training, evaluation, and dataset prep scripts
+├── fine_tune_mt5.sh        # SLURM script for training on a cluster
+├── mt5-small.yml           # Conda environment file
+├── README.md               # This file
+└── .gitignore              # Files/folders excluded from GitHub
+```
 
