@@ -67,7 +67,7 @@ def compute_metrics(eval_pred):
     em_result = exact_match_metric.compute(predictions=decoded_preds, references=decoded_labels)
     result["exact_match"] = round(em_result["exact_match"], 4)
 
-    print(f"🔍 Exact Match: {result['exact_match']}")
+    print(f"Exact Match: {result['exact_match']}")
     return {k: round(v, 4) for k, v in result.items()}
 
 # Dummy training args just for evaluation
