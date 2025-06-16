@@ -2,7 +2,7 @@
 
 This repository has been designed to provide a complete, reproducible workflow for fine-tuning the [google/mt5-small](https://huggingface.co/google/mt5-small) model on the [FTRACE dataset](https://huggingface.co/datasets/ekinakyurek/ftrace). The task has been formulated as **masked span prediction** using mT5’s `<extra_id_*>` tokens.
 
-The entire training pipeline has been configured for execution on a **High-Performance Computing (HPC)** cluster using **Slurm** and **Singularity**, ensuring full reproducibility and seamless deployment.
+The entire training pipeline has been configured for execution on a **High-Performance Computing (HPC)** cluster using **Slurm** and **Singularity**.
 
 ---
 
