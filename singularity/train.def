@@ -1,0 +1,46 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+
+%files
+  ../scripts/train_model.py /opt/scripts/train_model.py
+  ../scripts/check_trained_model.py /opt/scripts/check_trained_model.py
+  ../callbacks /opt/callbacks
+
+%post
+  # Upgrade pip
+  pip install --upgrade pip
+
+  # Install all necessary packages using pip
+  pip install \
+    sentencepiece \
+    numpy \
+    pandas \
+    scikit-learn \
+    tqdm \
+    pyyaml \
+    transformers==4.35.2 \
+    datasets==3.5.0 \
+    accelerate==0.20.3 \
+    evaluate==0.4.3 \
+    rouge-score \
+    huggingface-hub==0.30.2 \
+    tensorboard==2.15.1 \
+    safetensors \
+    tokenizers==0.15.2
+  
+  # NOTE: The mkdir/chmod commands for the old cache have been removed as they are no longer needed.
+
+# --- MODIFIED SECTION ---
+# This section now points to a persistent cache directory that will be mounted from the host.
+%environment
+  export PYTHONUNBUFFERED=1
+  export PYTHONPATH=/opt
+  # Point to the new, persistent cache location mounted at /mnt/cache
+  export HF_HOME=/mnt/cache
+  export HF_DATASETS_CACHE=/mnt/cache/datasets
+  export TRANSFORMERS_CACHE=/mnt/cache/transformers
+
+
+%runscript
+  echo "Starting training inside Singularity"
+  python /opt/scripts/train_model.py
