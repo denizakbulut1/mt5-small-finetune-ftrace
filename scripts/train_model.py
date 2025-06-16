@@ -15,13 +15,13 @@ from callbacks.training_accuracy import TrainingAccuracyCallback
 import evaluate
 from datasets import load_dataset
 
-dataset = load_from_disk("data/tokenized_abstracts_128")
+dataset = load_from_disk("/mnt/train_data")
 
-train_dataset = dataset["train"]  # Use all abstracts(no validation set)
+train_dataset = dataset["train"]  # Use all abstracts
 eval_dataset = None
 
 # Load raw dataset for accuracy callback
-raw_dataset = load_dataset("ekinakyurek/ftrace", "abstracts")["train"]
+raw_dataset = train_dataset
 
 tokenizer = MT5Tokenizer.from_pretrained("google/mt5-small", use_fast=False)
 model = MT5ForConditionalGeneration.from_pretrained("google/mt5-small")
@@ -61,9 +61,9 @@ def compute_metrics(eval_pred):
 
 # Training arguments
 training_args = Seq2SeqTrainingArguments(
-    output_dir="./outputs/mt5-finetuned-ftrace",
-    logging_dir= "./logs",
-     disable_tqdm=True,
+    output_dir="/mnt/outputs/mt5-finetuned-ftrace",
+    logging_dir="/mnt/outputs/mt5-finetuned-ftrace/logs",
+    disable_tqdm=True,
     evaluation_strategy="no",
     save_strategy="epoch",
     logging_strategy="steps",
@@ -110,5 +110,5 @@ trainer = Seq2SeqTrainer(
 trainer.train()
 
 # Save the final model
-trainer.save_model("./outputs/mt5-finetuned-ftrace")
+trainer.save_model("/mnt/outputs/mt5-finetuned-ftrace")
 print("Training complete and model saved.")
