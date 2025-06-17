@@ -1,6 +1,9 @@
 import torch
-
 import os
+import evaluate
+import json
+from datetime import datetime
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 from datasets import load_from_disk
@@ -11,122 +14,110 @@ from transformers import (
     Seq2SeqTrainingArguments,
     DataCollatorForSeq2Seq
 )
-import evaluate
 
+FINETUNED_MODEL_PATH = "/mnt/outputs/mt5-finetuned-ftrace"
+DATASET_PATH = "/mnt/train_data"
+EVAL_OUTPUT_DIR = "/mnt/outputs/tmp-eval"
 
-# Load model and tokenizer
-model_path = "./outputs/mt5-finetuned-ftrace/checkpoint-2925855"
-tokenizer = MT5Tokenizer.from_pretrained(model_path, use_fast=False)
-model = MT5ForConditionalGeneration.from_pretrained(model_path)
+SUMMARY_FILE_PATH = os.path.join(FINETUNED_MODEL_PATH, "evaluation_summary.txt")
 
+print("--- Setting up environment ---")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
+print(f"Using device: {device}")
 
-model.eval()
+print(f"Loading fine-tuned model from: {FINETUNED_MODEL_PATH}")
+tokenizer = MT5Tokenizer.from_pretrained(FINETUNED_MODEL_PATH, use_fast=False)
+finetuned_model = MT5ForConditionalGeneration.from_pretrained(FINETUNED_MODEL_PATH).to(device).eval()
 
+print("Loading base 'google/mt5-small' model...")
+base_model = MT5ForConditionalGeneration.from_pretrained("google/mt5-small").to(device).eval()
+
+print(f"Loading dataset from: {DATASET_PATH}")
+dataset = load_from_disk(DATASET_PATH)
+eval_dataset = dataset["train"].shuffle(seed=42).select(range(200, 250))
+print(f"Loaded {len(eval_dataset)} samples for evaluation.")
+
+exact_match_metric = evaluate.load("exact_match")
+rouge_metric = evaluate.load("rouge")
+
+# Test 1: Single Inference Example
+print("\n--- Running single inference test ---")
 input_text = ("Sodium and potassium are also essential elements, having major biological roles as electrolytes, and although the other <extra_id_0> are not essential, they also "
 "have various effects on the body, both beneficial and harmful.")
-
 inputs = tokenizer(input_text, return_tensors="pt").to(device)
-output_ids = model.generate(**inputs, max_length=50, num_beams=5)
-decoded = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+output_ids = finetuned_model.generate(**inputs, max_length=50, num_beams=5)
+decoded_output = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+print(f"Input Text: {input_text}")
+print(f"Predicted Output: {decoded_output}")
 
-print("Predicted span:", decoded)
-
-# Remove extra tokens
-if "<extra_id_0>" in decoded and "<extra_id_1>" in decoded:
-    span = decoded.split("<extra_id_0>")[1].split("<extra_id_1>")[0].strip()
-else:
-    span = decoded.strip()
-
-print("Predicted fill-in for <extra_id_0>:", span)
-
-#Load tokenized dataset (same format as training)
-dataset = load_from_disk("data/tokenized_abstracts")
-eval_dataset = dataset["train"].shuffle(seed=42).select(range(200, 250))  # small subset for evaluation
-
-# Load tokenizer and fine-tuned model
-model_path = "./outputs/mt5-finetuned-ftrace/checkpoint-2925855"
-tokenizer = MT5Tokenizer.from_pretrained(model_path, use_fast=False)
-model = MT5ForConditionalGeneration.from_pretrained(model_path)
-
-# Prepare data collator
-data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
-
-# Load evaluation metrics
-rouge = evaluate.load("rouge")
-exact_match_metric = evaluate.load("exact_match")
-
-# Define compute_metrics function
+# Test 2: Formal Evaluation with Seq2SeqTrainer
+print("\n--- Running formal evaluation with Trainer.evaluate() ---")
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-    result = rouge.compute(predictions=decoded_preds, references=decoded_labels)
+    
+    rouge_result = rouge_metric.compute(predictions=decoded_preds, references=decoded_labels)
     em_result = exact_match_metric.compute(predictions=decoded_preds, references=decoded_labels)
-    result["exact_match"] = round(em_result["exact_match"], 4)
+    rouge_result["exact_match"] = round(em_result["exact_match"], 4)
+    
+    return {k: round(v, 4) for k, v in rouge_result.items()}
 
-    print(f"Exact Match: {result['exact_match']}")
-    return {k: round(v, 4) for k, v in result.items()}
-
-# Dummy training args just for evaluation
-training_args = Seq2SeqTrainingArguments(
-    output_dir="./outputs/tmp-eval",
-    per_device_eval_batch_size=8,
-    predict_with_generate=True,
-    report_to="none"
-)
-
-# Initialize Trainer
 trainer = Seq2SeqTrainer(
-    model=model,
-    args=training_args,
+    model=finetuned_model,
+    args=Seq2SeqTrainingArguments(
+        output_dir=EVAL_OUTPUT_DIR,
+        per_device_eval_batch_size=8,
+        predict_with_generate=True,
+        report_to="none"
+    ),
     eval_dataset=eval_dataset,
     tokenizer=tokenizer,
-    data_collator=data_collator,
+    data_collator=DataCollatorForSeq2Seq(tokenizer, model=finetuned_model),
     compute_metrics=compute_metrics,
 )
+trainer_metrics = trainer.evaluate()
+print("Evaluation Metrics from Trainer:", trainer_metrics)
 
-# Evaluate
-metrics = trainer.evaluate()
-print("Evaluation Metrics:", metrics)
+# Test 3: Before vs. After Comparison
+print("\n--- Comparing performance: Before vs. After Fine-Tuning ---")
+input_texts = [tokenizer.decode(example["input_ids"], skip_special_tokens=True) for example in eval_dataset]
+references = [tokenizer.decode(example["labels"], skip_special_tokens=True) for example in eval_dataset]
 
-
-# Load tokenizer
-tokenizer = MT5Tokenizer.from_pretrained("google/mt5-small", use_fast=False)
-
-# Load dataset (e.g., 50 samples from the same source)
-dataset = load_from_disk("data/tokenized_abstracts")
-test_dataset = dataset["train"].shuffle(seed=42).select(range(200, 250))  # same range for consistency
-
-# Load base and fine-tuned models
-base_model = MT5ForConditionalGeneration.from_pretrained("google/mt5-small")
-finetuned_model = MT5ForConditionalGeneration.from_pretrained("./outputs/mt5-finetuned-ftrace/checkpoint-2925855")
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-base_model.to(device).eval()
-finetuned_model.to(device).eval()
-
-# Prepare input texts and reference labels
-input_texts = [tokenizer.decode(example["input_ids"], skip_special_tokens=True) for example in test_dataset]
-references = [tokenizer.decode(example["labels"], skip_special_tokens=True) for example in test_dataset]
-
-def compute_exact_match(model, input_texts, references):
+def get_exact_match(model, texts):
     predictions = []
-    for text in input_texts:
+    for text in texts:
         inputs = tokenizer(text, return_tensors="pt").to(device)
         with torch.no_grad():
             outputs = model.generate(**inputs, max_length=128)
-        decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        predictions.append(decoded)
+        predictions.append(tokenizer.decode(outputs[0], skip_special_tokens=True))
     
     result = exact_match_metric.compute(predictions=predictions, references=references)
     return round(result["exact_match"], 4)
 
-# Compute EM for base and fine-tuned models
-em_base = compute_exact_match(base_model, input_texts, references)
-em_finetuned = compute_exact_match(finetuned_model, input_texts, references)
+em_base = get_exact_match(base_model, input_texts)
+em_finetuned = get_exact_match(finetuned_model, input_texts)
 
-print(f"Exact Match Score BEFORE training: {em_base}")
+print(f"Exact Match Score BEFORE training (base model): {em_base}")
 print(f"Exact Match Score AFTER fine-tuning: {em_finetuned}")
+
+# Save Results to Summary File
+print(f"\n--- Saving results to {SUMMARY_FILE_PATH} ---")
+with open(SUMMARY_FILE_PATH, 'w') as f:
+    f.write("Evaluation Summary\n")
+    f.write("==================\n")
+    f.write(f"Date and Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    f.write(f"Model Path: {FINETUNED_MODEL_PATH}\n")
+    f.write(f"Dataset Path: {DATASET_PATH}\n")
+    f.write(f"Evaluation Samples: {len(eval_dataset)}\n\n")
+
+    f.write("Trainer Evaluation Metrics:\n")
+    
+    f.write(json.dumps(trainer_metrics, indent=2))
+    f.write("\n\n")
+    
+    f.write("Before vs. After Comparison:\n")
+    f.write(f"  Exact Match Score (Base Model): {em_base}\n")
+    f.write(f"  Exact Match Score (Fine-Tuned Model): {em_finetuned}\n")
+
+print("Summary file saved successfully.")
