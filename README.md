@@ -4,6 +4,8 @@ This repository has been designed to provide a complete, reproducible workflow f
 
 The entire training pipeline has been configured for execution on a **High-Performance Computing (HPC)** cluster using **Slurm** and **Singularity**.
 
+All abstracts from the FTRACE dataset have been used as the training set in this project.
+
 ---
 
 ## Key Features
